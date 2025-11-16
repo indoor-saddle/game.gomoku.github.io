@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五目並べ</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin: 0 0 20px 0;
+        }
+        
+        .info {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .board {
+            display: inline-block;
+            background: #daa520;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
+            position: relative;
+        }
+        
+        .grid {
+            position: relative;
+        }
+        
+        .grid-line {
+            position: absolute;
+            background: #000;
+        }
+        
+        .grid-line.horizontal {
+            height: 1px;
+            width: 100%;
+        }
+        
+        .grid-line.vertical {
+            width: 1px;
+            height: 100%;
+        }
+        
+        .intersection {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+        
+        .intersection:hover::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 50%;
+        }
+        
+        .intersection.disabled {
+            cursor: not-allowed;
+        }
+        
+        .intersection.disabled:hover::after {
+            display: none;
+        }
+        
+        .stone {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+        
+        .black {
+            background: radial-gradient(circle at 30% 30%, #444, #000);
+        }
+        
+        .white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+        }
+        
+        .controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .mode-select {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .mode-select label {
+            margin-right: 20px;
+            font-size: 16px;
+            color: #555;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .winner {
+            color: #e74c3c;
+            font-size: 24px;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>五目並べ</h1>
+        <div class="mode-select">
+            <label><input type="radio" name="mode" value="pvp" checked> 対人戦</label>
+            <label><input type="radio" name="mode" value="pvc"> CPU対戦</label>
+        </div>
+        <div class="info" id="info">黒の番</div>
+        <div class="board" id="board"></div>
+        <div class="controls">
+            <button onclick="resetGame()">新しいゲーム</button>
+        </div>
+    </div>
+
+    <script>
+        const BOARD_SIZE = 15;
+        let board = [];
+        let currentPlayer = 'black';
+        let gameOver = false;
+        let isCPUMode = false;
+
+        function initBoard() {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+            board = [];
+            currentPlayer = 'black';
+            gameOver = false;
+            isCPUMode = document.querySelector('input[name="mode"]:checked').value === 'pvc';
+            updateInfo();
+
+            const CELL_SIZE = 35;
+            const boardSize = (BOARD_SIZE - 1) * CELL_SIZE;
+            
+            const grid = document.createElement('div');
+            grid.className = 'grid';
+            grid.style.width = boardSize + 'px';
+            grid.style.height = boardSize + 'px';
+            grid.style.position = 'relative';
+
+            // 横線を描画
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const line = document.createElement('div');
+                line.className = 'grid-line horizontal';
+                line.style.top = (i * CELL_SIZE) + 'px';
+                grid.appendChild(line);
+            }
+
+            // 縦線を描画
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const line = document.createElement('div');
+                line.className = 'grid-line vertical';
+                line.style.left = (i * CELL_SIZE) + 'px';
+                grid.appendChild(line);
+            }
+
+            // 交点を作成
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                board[i] = [];
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    board[i][j] = null;
+                    const intersection = document.createElement('div');
+                    intersection.className = 'intersection';
+                    intersection.dataset.row = i;
+                    intersection.dataset.col = j;
+                    intersection.style.left = (j * CELL_SIZE) + 'px';
+                    intersection.style.top = (i * CELL_SIZE) + 'px';
+                    intersection.onclick = () => makeMove(i, j);
+                    grid.appendChild(intersection);
+                }
+            }
+            
+            boardEl.appendChild(grid);
+        }
+
+        function makeMove(row, col, isCPU = false) {
+            if (gameOver || board[row][col]) return;
+            if (isCPUMode && !isCPU && currentPlayer === 'white') return;
+
+            board[row][col] = currentPlayer;
+            const intersection = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+            const stone = document.createElement('div');
+            stone.className = `stone ${currentPlayer}`;
+            intersection.appendChild(stone);
+
+            if (checkWin(row, col)) {
+                gameOver = true;
+                const winner = currentPlayer === 'black' ? '黒' : '白';
+                const winnerText = isCPUMode && currentPlayer === 'white' ? 'CPUの勝ち！' : `${winner}の勝ち！`;
+                document.getElementById('info').innerHTML = `<span class="winner">${winnerText}</span>`;
+                disableBoard();
+                return;
+            }
+
+            currentPlayer = currentPlayer === 'black' ? 'white' : 'black';
+            updateInfo();
+
+            if (isCPUMode && currentPlayer === 'white' && !gameOver) {
+                setTimeout(cpuMove, 500);
+            }
+        }
+
+        function cpuMove() {
+            const move = findBestMove();
+            if (move) {
+                makeMove(move.row, move.col, true);
+            }
+        }
+
+        function findBestMove() {
+            // 勝てる手があるか確認
+            let move = findWinningMove('white');
+            if (move) return move;
+
+            // プレイヤーの勝ちを防ぐ
+            move = findWinningMove('black');
+            if (move) return move;
+
+            // 攻撃的な手を探す
+            move = findAttackMove('white');
+            if (move) return move;
+
+            // 防御的な手を探す
+            move = findAttackMove('black');
+            if (move) return move;
+
+            // 中央付近に置く
+            if (!board[7][7]) return { row: 7, col: 7 };
+
+            // ランダムに空いている場所を探す
+            const empty = [];
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    if (!board[i][j] && hasNeighbor(i, j)) {
+                        empty.push({ row: i, col: j });
+                    }
+                }
+            }
+            return empty.length > 0 ? empty[Math.floor(Math.random() * empty.length)] : null;
+        }
+
+        function hasNeighbor(row, col) {
+            for (let i = -2; i <= 2; i++) {
+                for (let j = -2; j <= 2; j++) {
+                    const r = row + i;
+                    const c = col + j;
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c]) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function findWinningMove(player) {
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    if (!board[i][j]) {
+                        board[i][j] = player;
+                        if (checkWinForPlayer(i, j, player)) {
+                            board[i][j] = null;
+                            return { row: i, col: j };
+                        }
+                        board[i][j] = null;
+                    }
+                }
+            }
+            return null;
+        }
+
+        function findAttackMove(player) {
+            let bestMove = null;
+            let maxCount = 0;
+
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    if (!board[i][j]) {
+                        const count = countThreats(i, j, player);
+                        if (count > maxCount) {
+                            maxCount = count;
+                            bestMove = { row: i, col: j };
+                        }
+                    }
+                }
+            }
+            return maxCount >= 2 ? bestMove : null;
+        }
+
+        function countThreats(row, col, player) {
+            board[row][col] = player;
+            let threats = 0;
+            const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+
+            for (const [dx, dy] of directions) {
+                let count = 1;
+                for (let i = 1; i < 5; i++) {
+                    const r = row + dx * i;
+                    const c = col + dy * i;
+                    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== player) break;
+                    count++;
+                }
+                for (let i = 1; i < 5; i++) {
+                    const r = row - dx * i;
+                    const c = col - dy * i;
+                    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== player) break;
+                    count++;
+                }
+                if (count >= 3) threats++;
+            }
+
+            board[row][col] = null;
+            return threats;
+        }
+
+        function checkWin(row, col) {
+            return checkWinForPlayer(row, col, currentPlayer);
+        }
+
+        function checkWinForPlayer(row, col, player) {
+            const directions = [
+                [0, 1],
+                [1, 0],
+                [1, 1],
+                [1, -1]
+            ];
+
+            for (const [dx, dy] of directions) {
+                let count = 1;
+                
+                for (let i = 1; i < 5; i++) {
+                    const newRow = row + dx * i;
+                    const newCol = col + dy * i;
+                    if (newRow < 0 || newRow >= BOARD_SIZE || newCol < 0 || newCol >= BOARD_SIZE) break;
+                    if (board[newRow][newCol] !== player) break;
+                    count++;
+                }
+                
+                for (let i = 1; i < 5; i++) {
+                    const newRow = row - dx * i;
+                    const newCol = col - dy * i;
+                    if (newRow < 0 || newRow >= BOARD_SIZE || newCol < 0 || newCol >= BOARD_SIZE) break;
+                    if (board[newRow][newCol] !== player) break;
+                    count++;
+                }
+                
+                if (count >= 5) return true;
+            }
+            
+            return false;
+        }
+
+        function updateInfo() {
+            if (isCPUMode) {
+                const info = currentPlayer === 'black' ? 'あなたの番（黒）' : 'CPUの番（白）';
+                document.getElementById('info').textContent = info;
+            } else {
+                const player = currentPlayer === 'black' ? '黒' : '白';
+                document.getElementById('info').textContent = `${player}の番`;
+            }
+        }
+
+        function disableBoard() {
+            const intersections = document.querySelectorAll('.intersection');
+            intersections.forEach(intersection => intersection.classList.add('disabled'));
+        }
+
+        function resetGame() {
+            initBoard();
+        }
+
+        document.querySelectorAll('input[name="mode"]').forEach(radio => {
+            radio.addEventListener('change', resetGame);
+        });
+
+        initBoard();
+    </script>
+</body>
+</html>
